@@ -122,6 +122,9 @@
   .doc-editor h3{font-size:15.5px;font-weight:700;margin:18px 0 8px;color:#3a3a3a;}
   .doc-editor p{margin:0 0 14px;text-align:justify;}
   .doc-editor ul,.doc-editor ol{margin:0 0 14px 22px;padding:0;}
+  .doc-editor table{border-collapse:collapse;width:100%;margin:0 0 16px;font-size:13.5px;}
+  .doc-editor th,.doc-editor td{border:1px solid #ccc;padding:6px 10px;text-align:left;vertical-align:top;}
+  .doc-editor th{background:#f0f0f0;font-weight:700;}
   .doc-editor .empty-hint{color:#8a8a8a;font-style:italic;}
 
   .summary-box{
@@ -257,8 +260,13 @@
 '\n' +
 '【額外輸出規則】\n' +
 '1. 全文使用 Markdown 標題語法：一級標題用「# 」開頭、二級標題用「## 」開頭、三級標題用「### 」開頭；一般段落不加任何符號的純文字，段落之間務必空一行分隔。\n' +
-'2. 整理後的完整內容全部輸出完畢後，另起一行輸出分隔標記「===調整說明===」，再簡述本次做了哪些調整（例如：合併重複段落、修正錯別字、補上標題階層等），條列 3-6 點即可，不要長篇大論，也不要在正文其他地方重複出現這個分隔標記。\n' +
-'3. 絕對不要遺漏或竄改原始內容中的數字、金額、日期、人名、專有名詞等核心事實資料。';
+'2. 若原始內容中包含表格（無論是明顯的欄列資料、或以符號/定位點排列的表格），請務必保留為表格，使用 Markdown 表格語法呈現，例如：\n' +
+'| 欄位A | 欄位B |\n' +
+'| --- | --- |\n' +
+'| 值1 | 值2 |\n' +
+'不要把表格拆散成一般段落文字或條列清單，也不要遺漏任何一列資料。\n' +
+'3. 整理後的完整內容全部輸出完畢後，另起一行輸出分隔標記「===調整說明===」，再簡述本次做了哪些調整（例如：合併重複段落、修正錯別字、補上標題階層等），條列 3-6 點即可，不要長篇大論，也不要在正文其他地方重複出現這個分隔標記。\n' +
+'4. 絕對不要遺漏或竄改原始內容中的數字、金額、日期、人名、專有名詞等核心事實資料，表格內的每一列資料也適用此規則。';
 
   /* ================= 5 組「額外需求」快速提示詞 ================= */
   var EXTRA_PRESETS = [
@@ -411,27 +419,67 @@
     });
   }
 
+  /* ================= Markdown 表格：解析／判斷（AI 輸出與陽春備援共用） ================= */
+  function splitTableRow(line){
+    var s = line.trim();
+    if(s.charAt(0) === '|') s = s.slice(1);
+    if(s.charAt(s.length - 1) === '|') s = s.slice(0, -1);
+    var cells = [];
+    var cur = '';
+    for(var i = 0; i < s.length; i++){
+      if(s.charAt(i) === '\\' && s.charAt(i+1) === '|'){ cur += '|'; i++; continue; }
+      if(s.charAt(i) === '|'){ cells.push(cur.trim()); cur = ''; continue; }
+      cur += s.charAt(i);
+    }
+    cells.push(cur.trim());
+    return cells;
+  }
+  function isTableSeparatorRow(line){
+    var cells = splitTableRow(line);
+    return cells.length > 0 && cells.every(function(c){ return /^:?-{2,}:?$/.test(c.trim()); });
+  }
+  function isTableBlock(lines){
+    return lines.length >= 2 && lines[0].trim().charAt(0) === '|' && isTableSeparatorRow(lines[1]);
+  }
+  function tableBlockToHtml(lines){
+    var header = splitTableRow(lines[0]);
+    var bodyRows = lines.slice(2).filter(function(l){ return l.trim(); }).map(splitTableRow);
+    var html = '<table><thead><tr>' + header.map(function(c){ return '<th>' + escapeHtml(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    bodyRows.forEach(function(row){
+      html += '<tr>' + row.map(function(c){ return '<td>' + escapeHtml(c) + '</td>'; }).join('') + '</tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  }
+
   /* ================= 陽春規則式整理（無 API 金鑰時的備援） ================= */
   function ruleBasedOrganize(raw){
     var t = raw.replace(/\r\n?/g, '\n');
     t = t.split('\n').map(function(l){ return l.replace(/[ \t　]+$/, ''); }).join('\n');
     t = t.replace(/\n{3,}/g, '\n\n');
-    var paragraphs = t.split(/\n{2,}/).map(function(block){
-      return block.split('\n').map(function(l){ return l.trim(); }).filter(Boolean).join(' ');
+    var blocks = t.split(/\n{2,}/).map(function(block){
+      var lines = block.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+      if(!lines.length) return '';
+      if(isTableBlock(lines)) return lines.join('\n');
+      return lines.join(' ');
     }).filter(Boolean);
-    return paragraphs;
+    return blocks.join('\n\n');
   }
   function runFallback(raw){
-    var paragraphs = ruleBasedOrganize(raw);
-    var html = paragraphs.length
-      ? paragraphs.map(function(p){ return '<p>' + escapeHtml(p) + '</p>'; }).join('')
+    var cleaned = ruleBasedOrganize(raw);
+    var blocks = cleaned ? cleaned.split(/\n{2,}/) : [];
+    var html = blocks.length
+      ? blocks.map(function(block){
+          var lines = block.split('\n');
+          return isTableBlock(lines) ? tableBlockToHtml(lines) : '<p>' + escapeHtml(block) + '</p>';
+        }).join('')
       : '<p class="empty-hint">（沒有可整理的內容）</p>';
     $('outputEditor').innerHTML = html;
     $('changeSummaryBox').hidden = true;
-    showToast('未偵測到 API 金鑰，僅完成基礎段落整理（合併換行、去除多餘空白，不含標題階層與改寫），填入金鑰後可使用完整 AI 整理');
+    showToast('未偵測到 API 金鑰，僅完成基礎段落整理（合併換行、去除多餘空白，保留原有表格，不含標題階層與改寫），填入金鑰後可使用完整 AI 整理');
   }
 
-  /* ================= Markdown（僅 #/##/###/清單/段落）→ HTML ================= */
+  /* ================= Markdown（僅 #/##/###/清單/表格/段落）→ HTML ================= */
   function markdownToHtml(md){
     var blocks = md.replace(/\r\n/g, '\n').split(/\n{2,}/);
     return blocks.map(function(block){
@@ -444,6 +492,7 @@
       m = /^#\s+(.+)$/.exec(block);
       if(m) return '<h1>' + escapeHtml(m[1]) + '</h1>';
       var lines = block.split('\n');
+      if(isTableBlock(lines)) return tableBlockToHtml(lines);
       if(lines.length && lines.every(function(l){ return /^[-*]\s+/.test(l.trim()); })){
         var items = lines.map(function(l){ return '<li>' + escapeHtml(l.trim().replace(/^[-*]\s+/, '')) + '</li>'; }).join('');
         return '<ul>' + items + '</ul>';
@@ -581,7 +630,88 @@
     }
     return docxXmlToText(new TextDecoder().decode(xmlBytes));
   }
+  var W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  // 表格用 Markdown 表格語法輸出（見下方 markdownTableFromTblEl），一般段落逐段輸出、段落間空一行——
+  // 這樣表格結構才能撐過後續的 AI／陽春規則式整理與 markdownToHtml() 渲染，不會被拆散成一行純文字。
   function docxXmlToText(xml){
+    var doc;
+    try{
+      doc = new DOMParser().parseFromString(xml, 'application/xml');
+      if(doc.getElementsByTagName('parsererror').length) throw new Error('parse error');
+    }catch(e){
+      return docxXmlToTextLegacy(xml);
+    }
+    var bodyEl = doc.getElementsByTagNameNS(W_NS, 'body')[0];
+    if(!bodyEl) return docxXmlToTextLegacy(xml);
+
+    function textOfParagraphEl(p){
+      var out = '';
+      (function walk(node){
+        for(var i = 0; i < node.childNodes.length; i++){
+          var n = node.childNodes[i];
+          if(n.nodeType !== 1) continue;
+          var local = n.localName;
+          if(local === 't') out += n.textContent;
+          else if(local === 'tab') out += '\t';
+          else if(local === 'br' || local === 'cr') out += '\n';
+          else walk(n);
+        }
+      })(p);
+      return out;
+    }
+    function textOfCellEl(tc){
+      var paras = [];
+      for(var i = 0; i < tc.childNodes.length; i++){
+        var n = tc.childNodes[i];
+        if(n.nodeType === 1 && n.localName === 'p'){
+          var t = textOfParagraphEl(n).trim();
+          if(t) paras.push(t);
+        }
+      }
+      return paras.join(' ').replace(/\|/g, '\\|');
+    }
+    function markdownTableFromTblEl(tbl){
+      var rows = [];
+      for(var i = 0; i < tbl.childNodes.length; i++){
+        var n = tbl.childNodes[i];
+        if(n.nodeType === 1 && n.localName === 'tr'){
+          var cells = [];
+          for(var j = 0; j < n.childNodes.length; j++){
+            var c = n.childNodes[j];
+            if(c.nodeType === 1 && c.localName === 'tc') cells.push(textOfCellEl(c));
+          }
+          if(cells.length) rows.push(cells);
+        }
+      }
+      if(!rows.length) return '';
+      var colCount = 0;
+      rows.forEach(function(r){ if(r.length > colCount) colCount = r.length; });
+      function padRow(r){ r = r.slice(); while(r.length < colCount) r.push(''); return r; }
+      var lines = [];
+      lines.push('| ' + padRow(rows[0]).join(' | ') + ' |');
+      var sep = [];
+      for(var k = 0; k < colCount; k++) sep.push('---');
+      lines.push('| ' + sep.join(' | ') + ' |');
+      for(var m = 1; m < rows.length; m++) lines.push('| ' + padRow(rows[m]).join(' | ') + ' |');
+      return lines.join('\n');
+    }
+
+    var blocks = [];
+    for(var i = 0; i < bodyEl.childNodes.length; i++){
+      var n = bodyEl.childNodes[i];
+      if(n.nodeType !== 1) continue;
+      if(n.localName === 'p'){
+        var t = textOfParagraphEl(n).trim();
+        if(t) blocks.push(t);
+      } else if(n.localName === 'tbl'){
+        var md = markdownTableFromTblEl(n);
+        if(md) blocks.push(md);
+      }
+    }
+    return blocks.join('\n\n');
+  }
+  // 舊版逐字元 regex 轉換，僅在 DOMParser 失敗（極少數不規則 XML）時當安全網——會把表格壓成單行 " | " 分隔文字，不保留列結構。
+  function docxXmlToTextLegacy(xml){
     var s = xml
       .replace(/<w:tab[^>]*\/>/g, '\t')
       .replace(/<w:br[^>]*\/>/g, '\n')
@@ -647,6 +777,20 @@
       return new docx.Paragraph(Object.assign({}, paraOpts||{}, {children:_docxRunsFromLine(line)}));
     });
   }
+  function _docxTableFromElement(tableEl){
+    var rows = Array.from(tableEl.rows).map(function(tr){
+      var cells = Array.from(tr.children).map(function(cellEl){
+        var isHeader = cellEl.tagName.toLowerCase() === 'th';
+        return new docx.TableCell({
+          children: _docxParagraphsFromNode(cellEl, {spacing:{after:0}}),
+          shading: isHeader ? {fill:'F3F4F6'} : undefined,
+          margins: {top:60, bottom:60, left:100, right:100}
+        });
+      });
+      return new docx.TableRow({children: cells});
+    });
+    return new docx.Table({rows: rows, width:{size:100, type:docx.WidthType.PERCENTAGE}});
+  }
   function docxItemsFromEditor(container){
     var items = [];
     Array.from(container.children).forEach(function(node){
@@ -661,6 +805,9 @@
         Array.from(node.children).forEach(function(li){
           items.push.apply(items, _docxParagraphsFromNode(li, {bullet:{level:0}, spacing:{after:60}}));
         });
+      } else if(tag === 'table'){
+        items.push(_docxTableFromElement(node));
+        items.push(new docx.Paragraph({spacing:{after:120}}));
       } else if(tag === 'p'){
         items.push.apply(items, _docxParagraphsFromNode(node, {spacing:{after:160}, alignment:docx.AlignmentType.JUSTIFIED}));
       } else {
