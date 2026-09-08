@@ -15,14 +15,15 @@
 - **Word (.docx) 匯出**：`docxItemsFromEditor()` 是 DOM-walker 手法，改寫自 `phoenix-loan-generator` 的 `_docxItemsFromContainer()`——**與原版的差異**：原版把 `h1`/`h2` 都對應到同一個 `HEADING_1`（因為原本只用來輸出單一文件標題），本工具需要三個獨立階層，因此改成 `h1→HEADING_1`／`h2→HEADING_2`／`h3→HEADING_3` 各自獨立對應，且不強制置中。`_docxLinesFromNode()`/`_docxRunsFromLine()`/`_docxParagraphsFromNode()` 三個輔助函式（處理粗體/斜體 run 拆分）逐字複製未改動。下載機制固定：`docx.Packer.toBlob()` → `URL.createObjectURL` → 隱藏 `<a download>` 點擊 → 5 秒後 `revokeObjectURL`。已用 Playwright 風格的瀏覽器自動化端對端驗證：H1 標題正確對應 Word 的 `Heading1` 樣式，其餘段落為一般內文。
 - **調整說明**：`#changeSummaryBox` 獨立顯示在輸出區下方，**不計入 Word 匯出內容**（`docxItemsFromEditor()` 只讀取 `#outputEditor` 的子節點）。
 
-## 本次刻意未做（部署上線前留待使用者決定）
+## 部署
 
-比照 `pref-confirm-before-deploy-new-experimental-tool` 記憶——新工具完成後不主動推公開 repo／部署 Pages：
+已推公開 GitHub repo `M255525/text-organizer-studio`，用 `.github/workflows/deploy-pages.yml`（比照 `scamper-thinking-generator` 逐字複製）以 Actions workflow 部署 GitHub Pages（非 legacy branch-source，`gh api repos/M255525/text-organizer-studio/pages -f build_type=workflow` 開啟），已上線：<https://m255525.github.io/text-organizer-studio/>。
 
-- 頂部跑馬燈、`manual.html` 操作手冊、PWA 加入主畫面、訪客計數器——這些是工作區「已部署上線工具」的標準配件，本工具目前只在本機交付，等使用者決定要上線時再依既有慣例補上（可參照 `scamper-thinking-generator`/`ai-prompt-generator` 的既有做法）
+## 本次刻意未做
+
+- 頂部跑馬燈、`manual.html` 操作手冊、PWA 加入主畫面、訪客計數器——這些是工作區「已部署上線工具」的標準配件，使用者目前只要求「push github page」，尚未要求補齊這些配件；之後若要加，可參照 `scamper-thinking-generator`/`ai-prompt-generator` 的既有做法
 - 序號授權（`member-license-gate`）——使用者本次明確表示先不套用
 - 桌面版 exe 打包
-- 公開 GitHub repo／GitHub Pages 部署
 
 ## 已知限制
 
