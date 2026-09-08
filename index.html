@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>文字整理編輯器 · 雜亂草稿變正式文件</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#e0b64c">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="文字整理">
 <style>
   :root{
     --bg:#0b1120;
@@ -58,6 +65,14 @@
   }
   textarea{min-height:56px;resize:vertical;line-height:1.6;}
   input:focus, textarea:focus, select:focus{border-color:var(--accent);}
+
+  /* ---------- 頂部跑馬燈（沿用工作區共用公告端點，與本工具其餘功能無關的獨立系統） ---------- */
+  #marqueeBar{position:fixed;top:0;left:0;right:0;height:30px;background:var(--panel);border-bottom:1px solid var(--line);z-index:2100;overflow:hidden;display:none;align-items:center}
+  #marqueeBar.show{display:flex}
+  #marqueeTrack{display:inline-block;white-space:nowrap;padding-left:100%;font-size:13px;font-weight:600;color:var(--accent);animation:marquee-scroll 30s linear infinite}
+  body.has-marquee{padding-top:30px}
+  body.has-marquee .topbar{top:30px}
+  @keyframes marquee-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
   .topbar{
     display:flex;align-items:center;justify-content:space-between;padding:16px 24px;
@@ -135,6 +150,14 @@
   .summary-box[hidden]{display:none;}
 
   footer{max-width:1240px;margin:0 auto;padding:10px 20px 40px;color:var(--text-faint);font-size:12px;line-height:1.8;}
+  .warn-box{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;font-size:12.5px;color:var(--text-dim);}
+  .warn-box strong{color:var(--text);display:block;margin-bottom:8px;font-size:13px;}
+  .warn-box ul{margin:0;padding-left:18px;}
+  .warn-box li{margin-bottom:5px;}
+  .footer-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:12.5px;color:var(--text-faint);font-family:var(--font-mono);align-items:center;}
+  .footer-meta a{color:var(--text-dim);}
+  .footer-link-btn{background:none;border:none;padding:0;margin:0;color:var(--text-dim);font:inherit;font-family:inherit;cursor:pointer;text-decoration:underline;}
+  .footer-link-btn:hover{color:var(--accent);}
 
   #toast{
     position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
@@ -146,6 +169,8 @@
 </style>
 </head>
 <body>
+
+<div id="marqueeBar"><div id="marqueeTrack"></div></div>
 
 <div class="topbar">
   <div class="brand">
@@ -221,12 +246,164 @@
 </main>
 
 <footer>
-  本工具不含伺服器端，所有輸入內容、整理結果與 API 金鑰皆只存在你目前使用的瀏覽器內，重新整理頁面或清除瀏覽器資料會遺失尚未下載的內容。AI 整理結果請自行核對，尤其是數字、金額、日期等關鍵資訊，不建議輸入機密或受保護的個人資料。
+  <div class="warn-box">
+    <strong>使用警語</strong>
+    <ul>
+      <li>本工具不含伺服器端，所有輸入內容、整理結果與 API 金鑰皆只存在你目前使用的瀏覽器內，重新整理頁面或清除瀏覽器資料會遺失尚未下載的內容，請自行用「下載 Word」備份重要內容。</li>
+      <li>請勿在任何欄位輸入真實個資、公司機密、他人受著作權保護的內容，或不希望被 AI 服務留存的敏感資訊。</li>
+      <li>「整理內容」在填入 API 金鑰時會直接連線到你選擇的服務商，本工具不會經手或保存金鑰，也不會向你收取任何 API 費用——實際費用依你與該服務商的方案計算。</li>
+      <li>AI 整理結果請自行核對，尤其是數字、金額、日期等關鍵資訊；本工具與創作者不對後續使用結果負責。</li>
+      <li>僅供教學、課程及個人使用，禁止未經授權公開發布、販售或商業化使用。</li>
+    </ul>
+  </div>
+  <div class="footer-meta">
+    <span>製作：Mark Tsai｜<a href="mailto:tsaimark@gmail.com">tsaimark@gmail.com</a></span>
+    <img src="https://visitor-badge.laobi.icu/badge?page_id=m255525.text-organizer-studio" alt="訪客次數" style="vertical-align:middle;height:20px;">
+    <button type="button" id="installBtn" class="footer-link-btn">📲 加入主畫面</button>
+    <a href="manual.html">操作手冊 →</a>
+  </div>
 </footer>
 
 <div id="toast"></div>
 
 <script>
+/* ================= 頂部跑馬燈（獨立運作，共用工作區既有的公告 Google Sheet） ================= */
+(function () {
+  'use strict';
+  var MARQUEE_CHECK_URL = "https://script.google.com/macros/s/AKfycbwKX0DNNbY8y4nf90BFTHtxgfqJcHHcZasRrgycl4QAe52_hkjMWSkYk4xOsqU-JPCROw/exec";
+  var STORAGE_KEY = 'textOrganizerMarquee';
+  var REFRESH_MS = 20 * 60 * 1000;
+
+  var bar = document.getElementById('marqueeBar');
+  var track = document.getElementById('marqueeTrack');
+  var lastKey = null;
+
+  function loadCache() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveCache(items) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch (e) {}
+  }
+  function appendParsedText(container, text) {
+    var re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    var lastIndex = 0, m;
+    while ((m = re.exec(text))) {
+      if (m.index > lastIndex) container.appendChild(document.createTextNode(text.slice(lastIndex, m.index)));
+      var a = document.createElement('a');
+      a.href = m[2];
+      a.textContent = m[1];
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.style.color = 'inherit';
+      a.style.textDecoration = 'underline';
+      container.appendChild(a);
+      lastIndex = re.lastIndex;
+    }
+    if (lastIndex < text.length) container.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+  function buildTrackContent(items) {
+    var frag = document.createDocumentFragment();
+    function appendPass() {
+      items.forEach(function (item, idx) {
+        if (idx > 0) frag.appendChild(document.createTextNode('　★　'));
+        appendParsedText(frag, item);
+      });
+    }
+    appendPass();
+    frag.appendChild(document.createTextNode('　★　'));
+    appendPass();
+    return frag;
+  }
+  function render(items) {
+    if (!items || !items.length) return;
+    var key = JSON.stringify(items);
+    if (key === lastKey) return;
+    lastKey = key;
+    track.innerHTML = '';
+    track.appendChild(buildTrackContent(items));
+    bar.classList.add('show');
+    document.body.classList.add('has-marquee');
+    var width = track.scrollWidth / 2;
+    track.style.animationDuration = Math.max(width / 80, 10) + 's';
+  }
+  function fetchMarquee() {
+    fetch(MARQUEE_CHECK_URL, { method: 'POST', body: JSON.stringify({ serial: '' }) })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && Array.isArray(data.marquee) && data.marquee.length) {
+          saveCache(data.marquee);
+          render(data.marquee);
+        }
+      })
+      .catch(function () {});
+  }
+
+  render(loadCache());
+  fetchMarquee();
+  setInterval(fetchMarquee, REFRESH_MS);
+})();
+
+/* ================= PWA 加入主畫面（獨立運作） ================= */
+(function () {
+  'use strict';
+  var deferredPrompt = null;
+  var btn = document.getElementById('installBtn');
+
+  var ua = navigator.userAgent || '';
+  var isIOSDevice = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var isMacDesktop = /Macintosh/.test(ua) && !isIOSDevice;
+  var isSafariEngine = /^((?!chrome|crios|fxios|edgios|android).)*safari/i.test(ua);
+  var isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+
+  function fallbackMessage() {
+    if (isIOSDevice) return '請點畫面上的「分享」圖示，選「加入主畫面」';
+    if (isMacDesktop && isSafariEngine) return '請用選單列「檔案」→「加入 Dock」（Safari 17 以上）';
+    return '目前瀏覽器不支援安裝，或已安裝過';
+  }
+
+  function notify(msg) {
+    var t = document.getElementById('toast');
+    if (!t) { window.alert(msg); return; }
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(notify._timer);
+    notify._timer = setTimeout(function () { t.classList.remove('show'); }, 2400);
+  }
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+  });
+  window.addEventListener('appinstalled', function () {
+    deferredPrompt = null;
+  });
+
+  if (btn) {
+    if (isStandalone) {
+      btn.style.display = 'none';
+    } else {
+      btn.addEventListener('click', function () {
+        if (!deferredPrompt) {
+          notify(fallbackMessage());
+          return;
+        }
+        try {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then(function () { deferredPrompt = null; });
+        } catch (e) {
+          notify(fallbackMessage());
+        }
+      });
+    }
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('service-worker.js').catch(function () {});
+    });
+  }
+})();
+
 (function(){
   'use strict';
   function $(id){ return document.getElementById(id); }

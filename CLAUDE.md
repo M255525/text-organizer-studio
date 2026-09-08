@@ -30,10 +30,20 @@
 
 已推公開 GitHub repo `M255525/text-organizer-studio`，用 `.github/workflows/deploy-pages.yml`（比照 `scamper-thinking-generator` 逐字複製）以 Actions workflow 部署 GitHub Pages（非 legacy branch-source，`gh api repos/M255525/text-organizer-studio/pages -f build_type=workflow` 開啟），已上線：<https://m255525.github.io/text-organizer-studio/>。
 
+## 已部署上線工具的標準配件（2026-09-08 補齊）
+
+比照 `scamper-thinking-generator`/`ai-prompt-generator` 既有做法，全部逐字複製或直接沿用同一套邏輯，只改動品牌相關的字串（storage key、page_id、標題等）：
+
+- **頂部跑馬燈**：`#marqueeBar` IIFE 逐字複製，共用工作區既有的公告 Google Apps Script 端點與 Sheet（與其餘工具同一顆，改內容不必重新部署），`localStorage` key `textOrganizerMarquee`。
+- **使用警語＋創作者資訊**：`footer` 內 `.warn-box`（5 點警語，內容依本工具實際功能調整措辭）＋ `.footer-meta`（Mark Tsai 聯絡信箱、訪客計數器、加入主畫面按鈕、操作手冊連結）。
+- **`manual.html`**：操作手冊，內容依本工具實際功能撰寫（貼上/上傳、API 設定與額外需求解鎖、AI 與陽春兩種整理模式、可編輯輸出區、表格保留、隱私與警語）；創作者資料段落與 `scamper-thinking-generator/manual.html` 等姊妹專案為同一份，更新其中一邊時同步其餘各邊。
+- **訪客計數器**：`visitor-badge.laobi.icu`，`page_id=m255525.text-organizer-studio`。
+- **PWA 加入主畫面**：`manifest.json`／`service-worker.js`（network-first + 同源快取備援）／`icons/`（`icon-192.png`／`icon-512.png`／`icon-maskable-512.png`／`apple-touch-icon.png`，navy 底＋金色「整」字，用 PIL 現畫、`msjhbd.ttc` 字型，產生後即刪除生成腳本）＋ 獨立 IIFE 安裝按鈕邏輯（iOS/macOS Safari 無 `beforeinstallprompt` 時顯示對應操作指引，安裝腳本自帶 `notify()` 不依賴主程式的 `showToast`，避免跨 IIFE 作用域看不到的既知坑）。已用 `navigator.serviceWorker.getRegistrations()` 驗證 SW 確實註冊並 active。
+- 已用瀏覽器自動化端對端驗證：跑馬燈正確抓到共用 Sheet 內容並顯示、警語與創作者資訊正常渲染、訪客計數器正常顯示、manual.html 各段落正常、加入主畫面按鈕可點擊無錯誤。
+
 ## 本次刻意未做
 
-- 頂部跑馬燈、`manual.html` 操作手冊、PWA 加入主畫面、訪客計數器——這些是工作區「已部署上線工具」的標準配件，使用者目前只要求「push github page」，尚未要求補齊這些配件；之後若要加，可參照 `scamper-thinking-generator`/`ai-prompt-generator` 的既有做法
-- 序號授權（`member-license-gate`）——使用者本次明確表示先不套用
+- 序號授權（`member-license-gate`）——使用者未要求套用
 - 桌面版 exe 打包
 
 ## 已知限制

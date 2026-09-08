@@ -1,0 +1,16 @@
+{
+  "name": "文字整理編輯器",
+  "short_name": "文字整理",
+  "description": "貼上或上傳雜亂草稿，AI 整理成標題階層清楚的正式文件，可直接編輯後下載成 Word",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1120",
+  "theme_color": "#e0b64c",
+  "lang": "zh-TW",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
