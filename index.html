@@ -205,7 +205,10 @@
         <select id="aiProvider"></select>
         <input type="text" id="aiModel" placeholder="模型名稱">
       </div>
-      <input type="password" id="aiKey" placeholder="API 金鑰（留空則使用基礎規則式整理，不產生標題階層）" style="margin-top:10px;">
+      <span style="position:relative;display:block;margin-top:10px;">
+        <input type="password" id="aiKey" placeholder="API 金鑰（留空則使用基礎規則式整理，不產生標題階層）" style="padding-right:34px;box-sizing:border-box;">
+        <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'👁':'🙈';" title="顯示／隱藏金鑰" aria-label="顯示／隱藏金鑰" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;padding:4px 6px;opacity:.65;line-height:1;">👁</button>
+      </span>
       <div class="hint">金鑰與設定只存在這台瀏覽器的 localStorage，不會送到任何第三方伺服器（AI 服務商官方 API 除外）。留空可用陽春規則式整理，但不會產生標題階層與精簡改寫。</div>
 
       <div class="row between" style="margin-top:16px;">
