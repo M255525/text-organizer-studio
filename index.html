@@ -11,6 +11,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="文字整理">
+<script>
+/* 先於畫面繪製前套用已儲存的背景主題，避免重整頁面時先閃一下預設深藍再切換 */
+(function(){
+  try{
+    var t = localStorage.getItem('textOrganizerSiteTheme');
+    if(t) document.documentElement.setAttribute('data-theme', t);
+  }catch(e){}
+})();
+</script>
 <style>
   :root{
     --bg:#0b1120;
@@ -32,6 +41,23 @@
     --font-sans:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;
     --radius:10px;
   }
+  /* ---------- 整站背景主題（頂部「背景主題」色塊切換，data-theme 由 JS 寫在 <html> 上） ---------- */
+  :root[data-theme="graphite"]{
+    --bg:#15181f;--bg-alt:#1b1f29;--panel:#1e222c;--panel-raised:#252a36;
+    --line:#343a48;--line-soft:#2a2f3b;--text:#eef0f4;--text-dim:#a9afbe;--text-faint:#767c8c;
+  }
+  :root[data-theme="cloud"]{
+    --bg:#eef1f6;--bg-alt:#e4e8f0;--panel:#ffffff;--panel-raised:#f4f6fa;
+    --line:#d8dce6;--line-soft:#e3e7ef;--text:#1c2333;--text-dim:#4b5570;--text-faint:#7a84a0;
+  }
+  :root[data-theme="cream"]{
+    --bg:#faf6ee;--bg-alt:#f3ecdc;--panel:#fffdf8;--panel-raised:#f7f0e0;
+    --line:#e6dcc4;--line-soft:#efe6d2;--text:#2b2416;--text-dim:#6b5f45;--text-faint:#9b8f6e;
+  }
+  :root[data-theme="sky"]{
+    --bg:#eef4fb;--bg-alt:#e3edf9;--panel:#ffffff;--panel-raised:#f2f7fd;
+    --line:#d3e2f2;--line-soft:#e1ecf8;--text:#182333;--text-dim:#48587a;--text-faint:#7a8bab;
+  }
   *{box-sizing:border-box;}
   html{-webkit-text-size-adjust:100%;}
   body{
@@ -40,6 +66,7 @@
       linear-gradient(rgba(224,182,76,0.035) 1px, transparent 1px),
       linear-gradient(90deg, rgba(224,182,76,0.035) 1px, transparent 1px);
     background-size:34px 34px;
+    transition:background-color .2s ease,color .2s ease;
   }
   a{color:var(--accent);}
   ::selection{background:var(--accent);color:#241a02;}
@@ -84,6 +111,14 @@
   .brand strong{font-size:15px;font-weight:700;}
   .brand span.tagline{color:var(--text-faint);font-size:12px;}
 
+  .theme-switcher{display:flex;align-items:center;gap:7px;}
+  .theme-switcher-label{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);margin-right:2px;}
+  .theme-swatch{
+    width:22px;height:22px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0;transition:.15s;
+  }
+  .theme-swatch:hover{border-color:var(--accent);transform:scale(1.1);}
+  .theme-swatch.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft);}
+
   main{max-width:1240px;margin:0 auto;padding:26px 20px 60px;}
   .layout{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
   @media (max-width:920px){ .layout{grid-template-columns:1fr;} }
@@ -125,15 +160,6 @@
     border:1px solid var(--line);padding:6px 10px;border-radius:6px;cursor:pointer;transition:.15s;
   }
   .fmt-btn:hover{border-color:var(--accent);color:var(--accent);}
-
-  .toolbar-sep{width:1px;align-self:stretch;background:var(--line);margin:2px 4px;}
-  .bg-swatches{display:flex;align-items:center;gap:7px;}
-  .bg-swatches-label{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-right:2px;}
-  .bg-swatch{
-    width:22px;height:22px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0;transition:.15s;
-  }
-  .bg-swatch:hover{border-color:var(--accent);transform:scale(1.1);}
-  .bg-swatch.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft);}
 
   .doc-editor{
     background:#fdfdfb;color:#1c1c1c;border-radius:6px;padding:36px 40px;min-height:420px;
@@ -186,6 +212,14 @@
     <span class="dot"></span>
     <strong>文字整理編輯器</strong>
     <span class="tagline">貼上或上傳雜亂草稿 → AI 排版校對 → 下載 Word</span>
+  </div>
+  <div class="theme-switcher" role="group" aria-label="背景主題">
+    <span class="theme-switcher-label">背景主題</span>
+    <button type="button" class="theme-swatch active" data-theme="" style="background:#0b1120" title="深藍（預設）"></button>
+    <button type="button" class="theme-swatch" data-theme="graphite" style="background:#15181f" title="石墨深灰"></button>
+    <button type="button" class="theme-swatch" data-theme="cloud" style="background:#eef1f6" title="雲白淺灰"></button>
+    <button type="button" class="theme-swatch" data-theme="cream" style="background:#faf6ee" title="米杏淺色"></button>
+    <button type="button" class="theme-swatch" data-theme="sky" style="background:#eef4fb" title="淺藍晴空"></button>
   </div>
 </div>
 
@@ -244,17 +278,6 @@
         <button class="fmt-btn" data-block="P" type="button">內文</button>
         <button class="fmt-btn" data-cmd="bold" type="button"><b>粗體</b></button>
         <button class="fmt-btn" data-cmd="italic" type="button"><i>斜體</i></button>
-        <span class="toolbar-sep"></span>
-        <div class="bg-swatches" role="group" aria-label="頁面底色">
-          <span class="bg-swatches-label">頁面底色</span>
-          <button type="button" class="bg-swatch active" data-bg="#fdfdfb" style="background:#fdfdfb" title="預設白"></button>
-          <button type="button" class="bg-swatch" data-bg="#f7f1e3" style="background:#f7f1e3" title="米白"></button>
-          <button type="button" class="bg-swatch" data-bg="#eaf2fb" style="background:#eaf2fb" title="淺藍"></button>
-          <button type="button" class="bg-swatch" data-bg="#eef7ee" style="background:#eef7ee" title="淺綠"></button>
-          <button type="button" class="bg-swatch" data-bg="#fdf8e1" style="background:#fdf8e1" title="淺黃"></button>
-          <button type="button" class="bg-swatch" data-bg="#f2f2f2" style="background:#f2f2f2" title="淺灰"></button>
-          <button type="button" class="bg-swatch" data-bg="#fdecef" style="background:#fdecef" title="淺粉"></button>
-        </div>
       </div>
 
       <div id="outputEditor" class="doc-editor" contenteditable="true"><p class="empty-hint">（整理後的內容會顯示在這裡，可直接點選文字修改，或用上方工具列調整標題階層）</p></div>
@@ -1077,25 +1100,26 @@
     });
   });
 
-  /* ================= 輸出區頁面底色（皆為淺色，確保深色文字可讀） ================= */
-  var DOC_BG_KEY = 'textOrganizerDocBg';
-  function applyDocBg(hex){
-    $('outputEditor').style.background = hex;
-    document.querySelectorAll('.bg-swatch').forEach(function(b){
-      b.classList.toggle('active', b.dataset.bg.toLowerCase() === hex.toLowerCase());
+  /* ================= 整站背景主題（頂部色塊，涵蓋深/淺多種，皆有淺色選項） ================= */
+  var SITE_THEME_KEY = 'textOrganizerSiteTheme';
+  function applySiteTheme(name){
+    if(name) document.documentElement.setAttribute('data-theme', name);
+    else document.documentElement.removeAttribute('data-theme');
+    document.querySelectorAll('.theme-swatch').forEach(function(b){
+      b.classList.toggle('active', b.dataset.theme === name);
     });
   }
-  document.querySelectorAll('.bg-swatch').forEach(function(btn){
+  document.querySelectorAll('.theme-swatch').forEach(function(btn){
     btn.addEventListener('click', function(){
-      var hex = btn.dataset.bg;
-      applyDocBg(hex);
-      try{ localStorage.setItem(DOC_BG_KEY, hex); }catch(e){}
+      var name = btn.dataset.theme;
+      applySiteTheme(name);
+      try{ localStorage.setItem(SITE_THEME_KEY, name); }catch(e){}
     });
   });
-  (function initDocBg(){
-    var saved = null;
-    try{ saved = localStorage.getItem(DOC_BG_KEY); }catch(e){}
-    if(saved) applyDocBg(saved);
+  (function initSiteTheme(){
+    var saved = '';
+    try{ saved = localStorage.getItem(SITE_THEME_KEY) || ''; }catch(e){}
+    applySiteTheme(saved);
   })();
 
   /* ================= 複製／清空 ================= */
