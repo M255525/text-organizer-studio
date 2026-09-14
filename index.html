@@ -126,6 +126,15 @@
   }
   .fmt-btn:hover{border-color:var(--accent);color:var(--accent);}
 
+  .toolbar-sep{width:1px;align-self:stretch;background:var(--line);margin:2px 4px;}
+  .bg-swatches{display:flex;align-items:center;gap:7px;}
+  .bg-swatches-label{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-right:2px;}
+  .bg-swatch{
+    width:22px;height:22px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0;transition:.15s;
+  }
+  .bg-swatch:hover{border-color:var(--accent);transform:scale(1.1);}
+  .bg-swatch.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft);}
+
   .doc-editor{
     background:#fdfdfb;color:#1c1c1c;border-radius:6px;padding:36px 40px;min-height:420px;
     font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",serif;line-height:1.95;font-size:15px;
@@ -235,6 +244,17 @@
         <button class="fmt-btn" data-block="P" type="button">內文</button>
         <button class="fmt-btn" data-cmd="bold" type="button"><b>粗體</b></button>
         <button class="fmt-btn" data-cmd="italic" type="button"><i>斜體</i></button>
+        <span class="toolbar-sep"></span>
+        <div class="bg-swatches" role="group" aria-label="頁面底色">
+          <span class="bg-swatches-label">頁面底色</span>
+          <button type="button" class="bg-swatch active" data-bg="#fdfdfb" style="background:#fdfdfb" title="預設白"></button>
+          <button type="button" class="bg-swatch" data-bg="#f7f1e3" style="background:#f7f1e3" title="米白"></button>
+          <button type="button" class="bg-swatch" data-bg="#eaf2fb" style="background:#eaf2fb" title="淺藍"></button>
+          <button type="button" class="bg-swatch" data-bg="#eef7ee" style="background:#eef7ee" title="淺綠"></button>
+          <button type="button" class="bg-swatch" data-bg="#fdf8e1" style="background:#fdf8e1" title="淺黃"></button>
+          <button type="button" class="bg-swatch" data-bg="#f2f2f2" style="background:#f2f2f2" title="淺灰"></button>
+          <button type="button" class="bg-swatch" data-bg="#fdecef" style="background:#fdecef" title="淺粉"></button>
+        </div>
       </div>
 
       <div id="outputEditor" class="doc-editor" contenteditable="true"><p class="empty-hint">（整理後的內容會顯示在這裡，可直接點選文字修改，或用上方工具列調整標題階層）</p></div>
@@ -1056,6 +1076,27 @@
       document.execCommand(btn.dataset.cmd, false, null);
     });
   });
+
+  /* ================= 輸出區頁面底色（皆為淺色，確保深色文字可讀） ================= */
+  var DOC_BG_KEY = 'textOrganizerDocBg';
+  function applyDocBg(hex){
+    $('outputEditor').style.background = hex;
+    document.querySelectorAll('.bg-swatch').forEach(function(b){
+      b.classList.toggle('active', b.dataset.bg.toLowerCase() === hex.toLowerCase());
+    });
+  }
+  document.querySelectorAll('.bg-swatch').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var hex = btn.dataset.bg;
+      applyDocBg(hex);
+      try{ localStorage.setItem(DOC_BG_KEY, hex); }catch(e){}
+    });
+  });
+  (function initDocBg(){
+    var saved = null;
+    try{ saved = localStorage.getItem(DOC_BG_KEY); }catch(e){}
+    if(saved) applyDocBg(saved);
+  })();
 
   /* ================= 複製／清空 ================= */
   $('copyBtn').addEventListener('click', async function(){
