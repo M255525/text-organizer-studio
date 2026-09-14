@@ -415,6 +415,19 @@
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
     });
   }
+  /* 去除 AI 輸出中殘留的行內 Markdown 強調符號（粗體/斜體/行內程式碼），只保留純文字，避免版面出現 * # ` 等雜訊 */
+  function stripMdEmphasis(s){
+    return String(s == null ? '' : s)
+      .replace(/```([\s\S]*?)```/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
+      .replace(/___([^_]+)___/g, '$1')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1$2')
+      .replace(/(^|[^_\w])_([^_\n]+)_(?!_)/g, '$1$2')
+      .replace(/^#{1,6}\s+/, '');
+  }
   function isLatin1(s){
     for(var i = 0; i < s.length; i++){ if(s.charCodeAt(i) > 0xFF) return false; }
     return true;
@@ -624,9 +637,9 @@
   function tableBlockToHtml(lines){
     var header = splitTableRow(lines[0]);
     var bodyRows = lines.slice(2).filter(function(l){ return l.trim(); }).map(splitTableRow);
-    var html = '<table><thead><tr>' + header.map(function(c){ return '<th>' + escapeHtml(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    var html = '<table><thead><tr>' + header.map(function(c){ return '<th>' + escapeHtml(stripMdEmphasis(c)) + '</th>'; }).join('') + '</tr></thead><tbody>';
     bodyRows.forEach(function(row){
-      html += '<tr>' + row.map(function(c){ return '<td>' + escapeHtml(c) + '</td>'; }).join('') + '</tr>';
+      html += '<tr>' + row.map(function(c){ return '<td>' + escapeHtml(stripMdEmphasis(c)) + '</td>'; }).join('') + '</tr>';
     });
     html += '</tbody></table>';
     return html;
@@ -666,18 +679,18 @@
       block = block.trim();
       if(!block) return '';
       var m = /^###\s+(.+)$/.exec(block);
-      if(m) return '<h3>' + escapeHtml(m[1]) + '</h3>';
+      if(m) return '<h3>' + escapeHtml(stripMdEmphasis(m[1])) + '</h3>';
       m = /^##\s+(.+)$/.exec(block);
-      if(m) return '<h2>' + escapeHtml(m[1]) + '</h2>';
+      if(m) return '<h2>' + escapeHtml(stripMdEmphasis(m[1])) + '</h2>';
       m = /^#\s+(.+)$/.exec(block);
-      if(m) return '<h1>' + escapeHtml(m[1]) + '</h1>';
+      if(m) return '<h1>' + escapeHtml(stripMdEmphasis(m[1])) + '</h1>';
       var lines = block.split('\n');
       if(isTableBlock(lines)) return tableBlockToHtml(lines);
       if(lines.length && lines.every(function(l){ return /^[-*]\s+/.test(l.trim()); })){
-        var items = lines.map(function(l){ return '<li>' + escapeHtml(l.trim().replace(/^[-*]\s+/, '')) + '</li>'; }).join('');
+        var items = lines.map(function(l){ return '<li>' + escapeHtml(stripMdEmphasis(l.trim().replace(/^[-*]\s+/, ''))) + '</li>'; }).join('');
         return '<ul>' + items + '</ul>';
       }
-      return '<p>' + lines.map(escapeHtml).join('<br>') + '</p>';
+      return '<p>' + lines.map(function(l){ return escapeHtml(stripMdEmphasis(l)); }).join('<br>') + '</p>';
     }).filter(Boolean).join('');
   }
 
