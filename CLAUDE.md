@@ -26,6 +26,23 @@
 - `docxItemsFromEditor()` 新增 `table` 標籤處理，讓輸出區的 `<table>` 也能正確匯出成 Word 表格（見上方「架構」）。
 - 已用實際測試檔（python-docx 產生的 3×3 表格＋前後段落）端對端驗證：上傳後 `#rawInput` 正確顯示 Markdown 表格 → 陽春模式整理後渲染成真正的 `<table>` → 下載 Word 後用 python-docx 讀回，`document.tables` 確認為真正的 Word 表格（非純文字），內容逐格正確。
 
+## 圖片／影片保留（2026-09-15 新增：上傳 .docx 若含圖片或影片，整理與下載時一併保留）
+
+**動機**：使用者要求「上傳要求整理檔案中如果有圖片或影片請一併保留」，且「整理下載時也一併保留」——原本 `extractDocxText()` 只解析 `word/document.xml` 的純文字，圖片／影片會直接消失。
+
+**做法（佔位標記貫穿整條管線）**：因為 AI／陽春規則式整理兩條路徑都只處理純文字，圖片/影片無法直接塞進 `#rawInput` textarea，所以改用「文字佔位標記」貫穿整條管線，最後再換回真正的媒體元素：
+
+- **擷取（`extractDocxText()`）**：改為先列出整份 docx zip 的所有檔案條目（`listDocxZipEntries()`/`readZipEntryBytes()`，取代原本只找單一 `word/document.xml` entry 的邏輯），額外讀取 `word/_rels/document.xml.rels` 建立 r:id → 媒體檔案相對路徑對照表，並預先讀出 `word/media/` 下副檔名符合圖片／影片的位元組。`docxXmlToText()` 在走訪段落時，遇到 `<w:drawing>` 元素會呼叫 `tokenForDrawing()`：先找子孫元素 `<a:videoFile r:link="rIdX">`（Word「插入本機視訊」時，圖片是縮圖、這個元素的 `r:link` 才指向實際影片檔）判斷是否為影片，否則找 `<a:blip r:embed="rIdX">` 判斷為一般圖片；解析出的位元組分別轉成 `data:` URL（圖片，存進 `images` map）或用 `URL.createObjectURL` 的 blob URL（影片，較省記憶體，存進 `videos` map），並在原文字位置插入 `[[IMG_n]]`／`[[VID_n]]` 純文字佔位標記，取代原本的圖片/影片內容。`extractDocxText()` 回傳值從純文字字串改成 `{text, images, videos}`，寫入模組層級變數 `uploadedMedia`（上傳新檔案或按「清空重來」時會呼叫 `revokeUploadedVideos()` 釋放舊的 blob URL 再重置）。
+- **整理（AI／陽春規則式皆不變邏輯，只加尾端還原）**：`[[IMG_n]]`／`[[VID_n]]` 是純 ASCII 文字，會像一般文字一樣原封不動撐過 `ruleBasedOrganize()`（陽春模式的行合併）與 AI 整理（`SYSTEM_PROMPT` 新增規則 5，明確要求 AI 原封不動保留這些標記、不要翻譯/刪除/搬移）。`applyAiResult()`／`runFallback()` 產生 HTML 後，統一多呼叫一層 `restoreMediaPlaceholders(html)`，把標記字串換成真正的 `<img class="doc-img">` 或 `<span class="doc-video-wrap">`（內含 `<video controls>` 預覽＋`<a download>` 下載原始影片檔按鈕＋一行提示文字），再寫入 `#outputEditor`。
+- **Word 匯出（`docxItemsFromEditor()`／`_docxLinesFromNode()`）**：DOM-walker 新增兩種節點類型——`<img>` 標籤轉成一筆 `{img:true, el}` marker，`_docxRunsFromLine()` 遇到就呼叫 `_docxImageRunFromImgEl()`（讀 `naturalWidth/Height`，超過 600px 寬則等比縮小，`data:` URL 轉 `Uint8Array` 後交給 `docx.ImageRun`，**必須帶 `type` 欄位**——`docx@9.7.1` 的 `ImageRun` 若省略 `type` 只給 `data`，匯出的 docx 會在 `[Content_Types].xml` 缺對應內容類型，Word/python-docx 開啟時報錯，這是實測踩到的坑，`_docxImageTypeFromDataUrl()` 依 `data:image/xxx` 的 MIME 對應到 docx.js 支援的 `png`/`jpg`/`gif`/`bmp`/`svg`）；`.doc-video-wrap` 節點（用 class 判斷，避免落入通用 `else{walk(child)}` 分支把裡面的下載連結文字也重複輸出一次）不遞迴，改成輸出一行純文字提示（含檔名），**影片本身不會匯出進 Word 檔**——因為 Word 文件格式本身就不支援內嵌可播放的本機影片，`docx.js` 也沒有對應 API，這是格式層級的硬限制，只能靠編輯區內的「下載原始影片檔」按鈕讓使用者另外保存原始檔。
+- **UI 提示**：輸入區新增一行 hint 說明佔位標記機制；`.warn-box` 新增一條警語明確告知「圖片會保留並可下載回 Word，影片受格式限制無法內嵌播放、下載 Word 時只會留檔名提示，請另外下載影片原始檔」。
+
+**已知限制**：
+- 只處理 `word/media/` 底下、副檔名為常見圖片（png/jpg/gif/bmp/webp/svg/tiff）或影片（mp4/mov/avi/wmv/webm/mkv/m4v）格式的檔案；webp/tiff 這類 docx.js 不支援匯出的圖片格式，`_docxImageTypeFromDataUrl()` 會 fallback 標成 `png` 但實際位元組仍是原格式，Word 開啟該圖仍可能失敗——這兩種格式本來就極少出現在 Word 文件內嵌圖片中，暫不特別處理。
+- 影片位置定位僅支援「本機插入視訊」（`<a:videoFile r:link>`）這種現代 Word 的做法；若 docx 內以 OLE 物件（`<w:object>`／`word/embeddings/*.bin`）嵌入影片（少數舊版做法），不會被偵測到、也不會被保留。
+- DOMParser 解析失敗時退回的 `docxXmlToTextLegacy()` 安全網完全不支援媒體擷取（原本就有的限制，未強化）。
+- 已用 python-docx 產生的測試檔（含一張圖片＋前後段落＋一張表格）端對端驗證：上傳後 `#rawInput` 正確顯示 `[[IMG_1]]` 佔位標記於正確位置 → 陽春模式整理後渲染成真正 `<img>` → 下載 Word 後用 python-docx 讀回 `inline_shapes` 確認圖片正確內嵌（含等比例縮放的正確尺寸）、表格與文字段落皆正確。影片路徑因手邊沒有真的內嵌本機影片的 docx 樣本，僅經程式碼審視、未實測。
+
 ## 部署
 
 已推公開 GitHub repo `M255525/text-organizer-studio`，用 `.github/workflows/deploy-pages.yml`（比照 `scamper-thinking-generator` 逐字複製）以 Actions workflow 部署 GitHub Pages（非 legacy branch-source，`gh api repos/M255525/text-organizer-studio/pages -f build_type=workflow` 開啟），已上線：<https://m255525.github.io/text-organizer-studio/>。

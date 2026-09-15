@@ -176,6 +176,11 @@
   .doc-editor th,.doc-editor td{border:1px solid #ccc;padding:6px 10px;text-align:left;vertical-align:top;}
   .doc-editor th{background:#f0f0f0;font-weight:700;}
   .doc-editor .empty-hint{color:#8a8a8a;font-style:italic;}
+  .doc-editor .doc-img{max-width:100%;height:auto;display:block;margin:10px 0;border-radius:2px;}
+  .doc-editor .doc-video-wrap{display:block;margin:14px 0;padding:12px 14px;border:1px dashed #bbb;border-radius:6px;background:#fafafa;}
+  .doc-editor .doc-video{max-width:100%;display:block;margin:0 0 8px;background:#000;}
+  .doc-editor .doc-video-download{display:inline-block;font-size:12.5px;color:#1a56db;text-decoration:underline;}
+  .doc-editor .doc-video-note{display:block;font-size:11.5px;color:#8a8a8a;margin-top:4px;}
 
   .summary-box{
     margin-top:14px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;
@@ -237,6 +242,7 @@
       </div>
 
       <textarea id="rawInput" placeholder="把要整理的雜亂草稿貼在這裡，或按上方「上傳 .txt / .docx」讀入既有檔案內容……" style="min-height:220px;"></textarea>
+      <div class="hint">上傳 .docx 若含圖片或（罕見的）本機嵌入影片，會以 <code>[[IMG_1]]</code>／<code>[[VID_1]]</code> 佔位標記帶入，整理後會自動換回原圖／影片顯示在右側編輯區。</div>
 
       <div class="field-label">額外需求（選填）</div>
       <div class="chip-row" id="presetChips"></div>
@@ -299,6 +305,7 @@
       <li>請勿在任何欄位輸入真實個資、公司機密、他人受著作權保護的內容，或不希望被 AI 服務留存的敏感資訊。</li>
       <li>「整理內容」在填入 API 金鑰時會直接連線到你選擇的服務商，本工具不會經手或保存金鑰，也不會向你收取任何 API 費用——實際費用依你與該服務商的方案計算。</li>
       <li>AI 整理結果請自行核對，尤其是數字、金額、日期等關鍵資訊；本工具與創作者不對後續使用結果負責。</li>
+      <li>上傳 .docx 內的圖片會保留並可下載回 Word 文件；內嵌影片受限於 Word 文件格式無法內嵌播放，僅會在編輯區保留預覽與下載按鈕，下載 Word 時該處只會顯示檔名提示，請務必另外下載影片原始檔保存。</li>
       <li>僅供教學、課程及個人使用，禁止未經授權公開發布、販售或商業化使用。</li>
     </ul>
   </div>
@@ -502,7 +509,8 @@
 '| 值1 | 值2 |\n' +
 '不要把表格拆散成一般段落文字或條列清單，也不要遺漏任何一列資料。\n' +
 '3. 整理後的完整內容全部輸出完畢後，另起一行輸出分隔標記「===調整說明===」，再簡述本次做了哪些調整（例如：合併重複段落、修正錯別字、補上標題階層等），條列 3-6 點即可，不要長篇大論，也不要在正文其他地方重複出現這個分隔標記。\n' +
-'4. 絕對不要遺漏或竄改原始內容中的數字、金額、日期、人名、專有名詞等核心事實資料，表格內的每一列資料也適用此規則。';
+'4. 絕對不要遺漏或竄改原始內容中的數字、金額、日期、人名、專有名詞等核心事實資料，表格內的每一列資料也適用此規則。\n' +
+'5. 原始內容中若出現形如「[[IMG_1]]」「[[VID_2]]」的英數字方括號標記，這些是圖片／影片的位置佔位標記，請原封不動地保留標記文字本身（不要翻譯、修改、刪除、合併或重複這些標記），並盡量維持它們在文件中原本的相對位置。';
 
   /* ================= 5 組「額外需求」快速提示詞 ================= */
   var EXTRA_PRESETS = [
@@ -710,7 +718,7 @@
           return isTableBlock(lines) ? tableBlockToHtml(lines) : '<p>' + escapeHtml(block) + '</p>';
         }).join('')
       : '<p class="empty-hint">（沒有可整理的內容）</p>';
-    $('outputEditor').innerHTML = html;
+    $('outputEditor').innerHTML = restoreMediaPlaceholders(html);
     $('changeSummaryBox').hidden = true;
     showToast('未偵測到 API 金鑰，僅完成基礎段落整理（合併換行、去除多餘空白，保留原有表格，不含標題階層與改寫），填入金鑰後可使用完整 AI 整理');
   }
@@ -755,7 +763,7 @@
       mainMd = text.trim();
       summary = '';
     }
-    var html = markdownToHtml(mainMd);
+    var html = restoreMediaPlaceholders(markdownToHtml(mainMd));
     $('outputEditor').innerHTML = html || '<p class="empty-hint">（AI 沒有回傳可用內容）</p>';
     if(summary){
       $('changeSummaryText').textContent = summary;
@@ -801,6 +809,51 @@
     else runFallback(raw);
   });
 
+  /* ================= 上傳檔案內偵測到的圖片／影片（上傳 .docx 時填入，下載/清空時記得釋放 blob URL） ================= */
+  var uploadedMedia = { images: {}, videos: {} };
+  function revokeUploadedVideos(){
+    Object.keys(uploadedMedia.videos || {}).forEach(function(k){
+      try{ URL.revokeObjectURL(uploadedMedia.videos[k].blobUrl); }catch(e){}
+    });
+  }
+  function guessMimeFromExt(name){
+    var ext = (name.split('.').pop() || '').toLowerCase();
+    var map = {
+      png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', bmp:'image/bmp',
+      webp:'image/webp', svg:'image/svg+xml', tif:'image/tiff', tiff:'image/tiff',
+      mp4:'video/mp4', mov:'video/quicktime', avi:'video/x-msvideo', wmv:'video/x-ms-wmv',
+      webm:'video/webm', mkv:'video/x-matroska', m4v:'video/mp4'
+    };
+    return map[ext] || 'application/octet-stream';
+  }
+  function bytesToDataUrl(bytes, mime){
+    var binary = '';
+    var CHUNK = 0x8000;
+    for(var i = 0; i < bytes.length; i += CHUNK){
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return 'data:' + mime + ';base64,' + btoa(binary);
+  }
+  /* 把整理後 HTML 內殘留的 [[IMG_n]]／[[VID_n]] 佔位標記換回真正的 <img>／<video> 元素（AI／陽春兩條路徑輸出前皆會呼叫） */
+  function restoreMediaPlaceholders(html){
+    html = html.replace(/\[\[IMG_(\d+)\]\]/g, function(m, n){
+      var img = uploadedMedia.images && uploadedMedia.images[n];
+      if(!img) return '';
+      return '<img class="doc-img" src="' + img.dataUrl + '" alt="圖片' + n + '">';
+    });
+    html = html.replace(/\[\[VID_(\d+)\]\]/g, function(m, n){
+      var vid = uploadedMedia.videos && uploadedMedia.videos[n];
+      if(!vid) return '';
+      var filename = escapeHtml(vid.filename || ('影片' + n));
+      return '<span class="doc-video-wrap" data-video-filename="' + filename + '">' +
+        '<video class="doc-video" src="' + vid.blobUrl + '" controls></video>' +
+        '<a class="doc-video-download" href="' + vid.blobUrl + '" download="' + filename + '">⬇️ 下載原始影片檔（' + filename + '）</a>' +
+        '<span class="doc-video-note">Word 文件格式不支援內嵌播放影片，下載 Word 時這裡只會保留檔名提示，請另外下載此影片原始檔保存。</span>' +
+        '</span>';
+    });
+    return html;
+  }
+
   /* ================= 上傳 .txt / .docx ================= */
   $('uploadBtn').addEventListener('click', function(){ $('fileUpload').click(); });
   $('fileUpload').addEventListener('change', async function(e){
@@ -808,11 +861,23 @@
     if(!file){ return; }
     var name = file.name.toLowerCase();
     try{
+      revokeUploadedVideos();
+      uploadedMedia = { images: {}, videos: {} };
       if(name.endsWith('.docx')){
         var buf = await file.arrayBuffer();
-        var text = await extractDocxText(buf);
-        $('rawInput').value = text.trim();
-        showToast('已讀入 Word 檔內容，請檢查是否正確');
+        var result = await extractDocxText(buf);
+        uploadedMedia = { images: result.images, videos: result.videos };
+        $('rawInput').value = result.text.trim();
+        var imgCount = Object.keys(result.images).length;
+        var vidCount = Object.keys(result.videos).length;
+        if(imgCount || vidCount){
+          var parts = [];
+          if(imgCount) parts.push(imgCount + ' 張圖片');
+          if(vidCount) parts.push(vidCount + ' 支影片');
+          showToast('已讀入 Word 檔內容，並偵測到 ' + parts.join('、') + '，整理時會嘗試保留在對應位置');
+        } else {
+          showToast('已讀入 Word 檔內容，請檢查是否正確');
+        }
       } else {
         var reader = new FileReader();
         reader.onload = function(){ $('rawInput').value = String(reader.result || ''); showToast('已讀入檔案內容'); };
@@ -825,8 +890,8 @@
     e.target.value = '';
   });
 
-  /* ---------------- 零依賴解析 .docx → 純文字（複製自 phoenix-loan-generator 的既有實作） ---------------- */
-  async function extractDocxText(arrayBuffer){
+  /* ---------------- 零依賴解析 .docx zip（複製自 phoenix-loan-generator 的既有實作，擴充為列出全部檔案條目） ---------------- */
+  function listDocxZipEntries(arrayBuffer){
     var data = new Uint8Array(arrayBuffer);
     var dv = new DataView(arrayBuffer);
     var eocd = -1;
@@ -837,8 +902,8 @@
     if(eocd < 0) throw new Error('不是有效的 docx（zip）檔案');
     var count = dv.getUint16(eocd+10, true);
     var p = dv.getUint32(eocd+16, true);
-    var entry = null;
-    for(var j=0; j<count; j++){
+    var entries = [];
+    for(var j = 0; j < count; j++){
       if(dv.getUint32(p, true) !== 0x02014b50) break;
       var method = dv.getUint16(p+10, true);
       var csize = dv.getUint32(p+20, true);
@@ -847,29 +912,102 @@
       var cmtLen = dv.getUint16(p+32, true);
       var lho = dv.getUint32(p+42, true);
       var name = new TextDecoder().decode(data.subarray(p+46, p+46+nameLen));
-      if(name === 'word/document.xml'){ entry = {method:method, csize:csize, lho:lho}; break; }
+      entries.push({name:name, method:method, csize:csize, lho:lho});
       p += 46 + nameLen + extraLen + cmtLen;
     }
-    if(!entry) throw new Error('docx 內找不到 word/document.xml');
+    return entries;
+  }
+  async function readZipEntryBytes(arrayBuffer, entry){
+    var data = new Uint8Array(arrayBuffer);
+    var dv = new DataView(arrayBuffer);
     var lNameLen = dv.getUint16(entry.lho+26, true);
     var lExtraLen = dv.getUint16(entry.lho+28, true);
     var start = entry.lho + 30 + lNameLen + lExtraLen;
     var comp = data.subarray(start, start + entry.csize);
-    var xmlBytes;
-    if(entry.method === 0){
-      xmlBytes = comp;
-    } else if(entry.method === 8){
+    if(entry.method === 0) return comp;
+    if(entry.method === 8){
       var stream = new Blob([comp]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-      xmlBytes = new Uint8Array(await new Response(stream).arrayBuffer());
-    } else {
-      throw new Error('不支援的 zip 壓縮方式：' + entry.method);
+      return new Uint8Array(await new Response(stream).arrayBuffer());
     }
-    return docxXmlToText(new TextDecoder().decode(xmlBytes));
+    throw new Error('不支援的 zip 壓縮方式：' + entry.method);
   }
+
+  async function extractDocxText(arrayBuffer){
+    var entries = listDocxZipEntries(arrayBuffer);
+    var byName = {};
+    entries.forEach(function(e){ byName[e.name] = e; });
+
+    var docEntry = byName['word/document.xml'];
+    if(!docEntry) throw new Error('docx 內找不到 word/document.xml');
+    var docXml = new TextDecoder().decode(await readZipEntryBytes(arrayBuffer, docEntry));
+
+    /* 讀 rels 取得 r:id → 媒體檔案相對路徑（如 media/image1.png）的對照表，供下方定位圖片/影片使用 */
+    var relsMap = {};
+    var relsEntry = byName['word/_rels/document.xml.rels'];
+    if(relsEntry){
+      var relsXml = new TextDecoder().decode(await readZipEntryBytes(arrayBuffer, relsEntry));
+      var relRe = /<Relationship\b[^>]*\bId="([^"]+)"[^>]*\bTarget="([^"]+)"[^>]*\/?>/g;
+      var relM;
+      while((relM = relRe.exec(relsXml))){ relsMap[relM[1]] = relM[2]; }
+    }
+
+    /* 只預先讀出圖片／影片類型的媒體檔案位元組，其餘（如字型、縮圖）略過不處理 */
+    var imageExtRe = /\.(png|jpe?g|gif|bmp|webp|svg|tiff?)$/i;
+    var videoExtRe = /\.(mp4|mov|avi|wmv|webm|mkv|m4v)$/i;
+    var mediaByFullPath = {};
+    for(var mi = 0; mi < entries.length; mi++){
+      var me = entries[mi];
+      if(!/^word\/media\//i.test(me.name)) continue;
+      var isImg = imageExtRe.test(me.name);
+      var isVid = videoExtRe.test(me.name);
+      if(!isImg && !isVid) continue;
+      var bytes = await readZipEntryBytes(arrayBuffer, me);
+      mediaByFullPath[me.name] = { bytes: bytes, mime: guessMimeFromExt(me.name), isVideo: isVid };
+    }
+    function resolveMedia(relTarget){
+      if(!relTarget) return null;
+      var norm = relTarget.replace(/^\.\.\//, '').replace(/^\.\//, '');
+      return mediaByFullPath['word/' + norm] || mediaByFullPath[norm] || null;
+    }
+
+    var images = {}, videos = {};
+    var imageCounter = 0, videoCounter = 0;
+    function registerMediaToken(rId, preferVideo){
+      var media = resolveMedia(relsMap[rId]);
+      if(!media) return null;
+      if(media.isVideo || preferVideo){
+        videoCounter++;
+        var blob = new Blob([media.bytes], {type: media.mime});
+        videos[videoCounter] = { blobUrl: URL.createObjectURL(blob), mime: media.mime, filename: relsMap[rId].split('/').pop() };
+        return '[[VID_' + videoCounter + ']]';
+      }
+      imageCounter++;
+      images[imageCounter] = { dataUrl: bytesToDataUrl(media.bytes, media.mime), mime: media.mime };
+      return '[[IMG_' + imageCounter + ']]';
+    }
+
+    var text = docxXmlToText(docXml, registerMediaToken);
+    return { text: text, images: images, videos: videos };
+  }
+
   var W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  function findAllDescendants(el, localName){
+    var out = [];
+    var all = el.getElementsByTagName('*');
+    for(var i = 0; i < all.length; i++){ if(all[i].localName === localName) out.push(all[i]); }
+    return out;
+  }
+  function getAttrAnyNs(el, localName){
+    for(var i = 0; i < el.attributes.length; i++){
+      if(el.attributes[i].localName === localName) return el.attributes[i].value;
+    }
+    return null;
+  }
   // 表格用 Markdown 表格語法輸出（見下方 markdownTableFromTblEl），一般段落逐段輸出、段落間空一行——
   // 這樣表格結構才能撐過後續的 AI／陽春規則式整理與 markdownToHtml() 渲染，不會被拆散成一行純文字。
-  function docxXmlToText(xml){
+  // 圖片／影片改成 [[IMG_n]]／[[VID_n]] 純文字佔位標記插入原本位置，同理讓它們撐過整理管線，
+  // 最後由 restoreMediaPlaceholders() 換回真正的 <img>／<video> 元素。
+  function docxXmlToText(xml, registerMediaToken){
     var doc;
     try{
       doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -880,6 +1018,23 @@
     var bodyEl = doc.getElementsByTagNameNS(W_NS, 'body')[0];
     if(!bodyEl) return docxXmlToTextLegacy(xml);
 
+    function tokenForDrawing(n){
+      // 本機插入的影片：<pic:nvPr> 內的 <a:videoFile r:link="rIdX">，指向 word/media/ 底下實際的影片檔（非線上影片連結）
+      var videoEls = findAllDescendants(n, 'videoFile');
+      if(videoEls.length){
+        var linkId = getAttrAnyNs(videoEls[0], 'link');
+        var vTok = linkId ? registerMediaToken(linkId, true) : null;
+        if(vTok) return vTok;
+      }
+      // 一般圖片：<a:blip r:embed="rIdX">（極少數用 r:link 表示外部連結圖片，一併嘗試）
+      var blipEls = findAllDescendants(n, 'blip');
+      if(blipEls.length){
+        var rId = getAttrAnyNs(blipEls[0], 'embed') || getAttrAnyNs(blipEls[0], 'link');
+        var iTok = rId ? registerMediaToken(rId, false) : null;
+        if(iTok) return iTok;
+      }
+      return '';
+    }
     function textOfParagraphEl(p){
       var out = '';
       (function walk(node){
@@ -890,6 +1045,7 @@
           if(local === 't') out += n.textContent;
           else if(local === 'tab') out += '\t';
           else if(local === 'br' || local === 'cr') out += '\n';
+          else if(local === 'drawing') out += tokenForDrawing(n);
           else walk(n);
         }
       })(p);
@@ -946,7 +1102,7 @@
     }
     return blocks.join('\n\n');
   }
-  // 舊版逐字元 regex 轉換，僅在 DOMParser 失敗（極少數不規則 XML）時當安全網——會把表格壓成單行 " | " 分隔文字，不保留列結構。
+  // 舊版逐字元 regex 轉換，僅在 DOMParser 失敗（極少數不規則 XML）時當安全網——會把表格壓成單行 " | " 分隔文字，不保留列結構，也不解析圖片/影片。
   function docxXmlToTextLegacy(xml){
     var s = xml
       .replace(/<w:tab[^>]*\/>/g, '\t')
@@ -986,6 +1142,14 @@
           var tag = child.tagName.toLowerCase();
           if(tag === 'br'){
             lines.push([]);
+          } else if(child.classList && child.classList.contains('doc-video-wrap')){
+            // Word 文件格式無法內嵌播放影片，改成一行文字提示檔名，原始影片檔請從編輯器內另行下載保存
+            var vname = child.getAttribute('data-video-filename') || '影片附件';
+            if(lines[lines.length-1].length) lines.push([]);
+            lines[lines.length-1].push(Object.assign({text:'🎬 [影片附件：' + vname + '－Word 文件無法內嵌播放，請另行下載原始檔保存]'}, style));
+            lines.push([]);
+          } else if(tag === 'img'){
+            lines[lines.length-1].push(Object.assign({img:true, el:child}, style));
           } else if(tag === 'b' || tag === 'strong'){
             walk(child, Object.assign({}, style, {bold:true}));
           } else if(tag === 'i' || tag === 'em'){
@@ -1003,10 +1167,36 @@
     if(lines.length > 1 && lines[lines.length-1].length === 0) lines.pop();
     return lines;
   }
+  function _dataUrlToUint8Array(dataUrl){
+    var base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    var binary = atob(base64);
+    var bytes = new Uint8Array(binary.length);
+    for(var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+  function _docxImageTypeFromDataUrl(dataUrl){
+    var m = /^data:image\/([a-zA-Z0-9.+-]+)/.exec(dataUrl);
+    var sub = m ? m[1].toLowerCase() : '';
+    var map = {png:'png', jpeg:'jpg', jpg:'jpg', gif:'gif', bmp:'bmp', 'svg+xml':'svg'};
+    return map[sub] || 'png';
+  }
+  function _docxImageRunFromImgEl(imgEl){
+    var w = imgEl.naturalWidth || imgEl.width || 300;
+    var h = imgEl.naturalHeight || imgEl.height || 200;
+    var maxW = 600;
+    if(w > maxW){ h = Math.round(h * maxW / w); w = maxW; }
+    return new docx.ImageRun({
+      data: _dataUrlToUint8Array(imgEl.src),
+      type: _docxImageTypeFromDataUrl(imgEl.src),
+      transformation: {width:w, height:h}
+    });
+  }
   function _docxRunsFromLine(line){
-    return (line && line.length)
-      ? line.map(function(r){ return new docx.TextRun({text:r.text, bold:!!r.bold, italics:!!r.italics}); })
-      : [new docx.TextRun({text:''})];
+    if(!line || !line.length) return [new docx.TextRun({text:''})];
+    return line.map(function(r){
+      if(r.img) return _docxImageRunFromImgEl(r.el);
+      return new docx.TextRun({text:r.text, bold:!!r.bold, italics:!!r.italics});
+    });
   }
   function _docxParagraphsFromNode(node, paraOpts){
     return _docxLinesFromNode(node).map(function(line){
@@ -1135,6 +1325,8 @@
   });
   $('clearBtn').addEventListener('click', function(){
     if(!confirm('確定要清空輸入與整理結果嗎？此動作無法復原。')) return;
+    revokeUploadedVideos();
+    uploadedMedia = { images: {}, videos: {} };
     $('rawInput').value = '';
     $('extraRequirement').value = '';
     $('outputEditor').innerHTML = '<p class="empty-hint">（整理後的內容會顯示在這裡，可直接點選文字修改，或用上方工具列調整標題階層）</p>';
