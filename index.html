@@ -99,6 +99,7 @@
   #marqueeTrack{display:inline-block;white-space:nowrap;padding-left:100%;font-size:13px;font-weight:600;color:var(--accent);animation:marquee-scroll 30s linear infinite}
   body.has-marquee{padding-top:30px}
   body.has-marquee .topbar{top:30px}
+  #marqueeBar:hover #marqueeTrack{animation-play-state:paused}
   @keyframes marquee-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
   .topbar{
